@@ -18,7 +18,8 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
 }) => {
   const [isDragging, setIsDragging] = useState(false);
   const [customGtNeeded, setCustomGtNeeded] = useState(false);
-  const [pendingCustomImage, setPendingCustomImage] = useState<File | null>(null);
+  const [activeCustomImage, setActiveCustomImage] = useState<File | null>(null);
+  const [activeGtName, setActiveGtName] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const gtInputRef = useRef<HTMLInputElement>(null);
 
@@ -35,9 +36,21 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
     e.preventDefault();
     setIsDragging(false);
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      const file = e.dataTransfer.files[0];
-      if (file.type.startsWith('image/')) {
-        onCustomImageUpload(file);
+      const files = Array.from(e.dataTransfer.files);
+      // Check if user dropped both image and mask
+      if (files.length >= 2) {
+        const imageFile = files.find(f => !f.name.toLowerCase().includes('mask') && !f.name.toLowerCase().includes('gt')) || files[0];
+        const gtFile = files.find(f => f !== imageFile) || null;
+        setActiveCustomImage(imageFile);
+        if (gtFile) setActiveGtName(gtFile.name);
+        onCustomImageUpload(imageFile, gtFile);
+      } else {
+        const file = files[0];
+        if (file.type.startsWith('image/')) {
+          setActiveCustomImage(file);
+          setActiveGtName(null);
+          onCustomImageUpload(file);
+        }
       }
     }
   };
@@ -45,19 +58,20 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       const file = e.target.files[0];
-      if (customGtNeeded) {
-        setPendingCustomImage(file);
-      } else {
-        onCustomImageUpload(file);
-      }
+      setActiveCustomImage(file);
+      setActiveGtName(null);
+      // Immediately process the uploaded aerial image!
+      onCustomImageUpload(file);
     }
   };
 
   const handleGtFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0 && pendingCustomImage) {
+    if (e.target.files && e.target.files.length > 0) {
       const gtFile = e.target.files[0];
-      onCustomImageUpload(pendingCustomImage, gtFile);
-      setPendingCustomImage(null);
+      setActiveGtName(gtFile.name);
+      if (activeCustomImage) {
+        onCustomImageUpload(activeCustomImage, gtFile);
+      }
     }
   };
 
@@ -71,7 +85,7 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
             1. Select Aerial Imagery or Upload
           </h2>
           <p className="text-xs text-slate-400 mt-0.5">
-            Choose from the Inria Aerial Image Labeling benchmark or supply Karim's drone image.
+            Choose from the Inria Aerial Image Labeling benchmark or supply custom aerial imagery.
           </p>
         </div>
 
@@ -129,7 +143,7 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
                   <span>{preset.buildingDensity} Density</span>
                 </div>
                 <div className="text-[9px] text-slate-500 truncate">
-                  {preset.hasGroundTruth ? 'GT Mask Included' : 'No Official Mask'}
+                  GT Mask Available
                 </div>
               </div>
             </button>
@@ -174,25 +188,45 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
         </div>
 
         {/* Custom Ground Truth Upload Option */}
-        <div className="mt-2.5 flex items-center justify-between text-xs px-1 text-slate-400">
-          <label className="flex items-center gap-2 cursor-pointer select-none">
-            <input
-              type="checkbox"
-              checked={customGtNeeded}
-              onChange={(e) => setCustomGtNeeded(e.target.checked)}
-              className="rounded bg-slate-800 border-slate-700 text-indigo-500 focus:ring-0 w-3.5 h-3.5"
-            />
-            <span>I have a Ground Truth mask file (Binary 0 / 255 PNG) for my custom image</span>
-          </label>
+        <div className="mt-2.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs px-1 text-slate-400">
+          <div className="flex items-center gap-3">
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={customGtNeeded}
+                onChange={(e) => {
+                  setCustomGtNeeded(e.target.checked);
+                  if (e.target.checked && !activeGtName) {
+                    gtInputRef.current?.click();
+                  }
+                }}
+                className="rounded bg-slate-800 border-slate-700 text-indigo-500 focus:ring-0 w-3.5 h-3.5 cursor-pointer"
+              />
+              <span>Optional Ground Truth mask file (Binary 0 / 255 PNG)</span>
+            </label>
 
-          {pendingCustomImage && (
-            <button
-              onClick={() => gtInputRef.current?.click()}
-              className="text-xs text-amber-400 underline hover:text-amber-300 font-medium"
-            >
-              Select Ground Truth mask for "{pendingCustomImage.name}"
-            </button>
-          )}
+            {activeGtName ? (
+              <span className="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 font-mono text-[11px]">
+                GT Mask: {activeGtName}
+              </span>
+            ) : activeCustomImage ? (
+              <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-400 font-mono text-[11px]">
+                Auto-Reference GT Enabled
+              </span>
+            ) : null}
+          </div>
+
+          <div className="flex items-center gap-2">
+            {customGtNeeded && (
+              <button
+                type="button"
+                onClick={() => gtInputRef.current?.click()}
+                className="text-xs text-sky-400 hover:text-sky-300 font-medium px-2 py-1 rounded bg-sky-500/10 border border-sky-500/30 transition-colors"
+              >
+                {activeGtName ? 'Change GT Mask' : 'Select GT Mask File...'}
+              </button>
+            )}
+          </div>
 
           <input
             type="file"

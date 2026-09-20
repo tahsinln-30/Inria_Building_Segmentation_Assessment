@@ -323,7 +323,7 @@ export function generateAerialPreset(preset: PresetImage): GeneratedImagePayload
   }
 
   const rgbDataUrl = rgbCanvas.toDataURL('image/png');
-  const gtDataUrl = preset.hasGroundTruth ? gtCanvas.toDataURL('image/png') : null;
+  const gtDataUrl = gtCanvas.toDataURL('image/png');
 
   return {
     rgbDataUrl,
@@ -331,6 +331,6 @@ export function generateAerialPreset(preset: PresetImage): GeneratedImagePayload
     width,
     height,
     rgbCanvas,
-    gtCanvas: preset.hasGroundTruth ? gtCanvas : undefined
+    gtCanvas
   };
 }

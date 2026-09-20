@@ -39,9 +39,18 @@ export const ViewerComparison: React.FC<ViewerComparisonProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const isDraggingSlider = useRef(false);
 
+  const updateSliderFromClientX = (clientX: number) => {
+    if (!containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const x = Math.max(0, Math.min(rect.width, clientX - rect.left));
+    const percentage = (x / rect.width) * 100;
+    setSliderPosition(Math.max(2, Math.min(98, percentage)));
+  };
+
   // Handle slider drag
-  const handleMouseDown = () => {
+  const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
     isDraggingSlider.current = true;
+    updateSliderFromClientX(e.clientX);
   };
 
   const handleMouseUp = () => {
@@ -55,8 +64,7 @@ export const ViewerComparison: React.FC<ViewerComparisonProps> = ({
     const y = Math.max(0, Math.min(rect.height, e.clientY - rect.top));
 
     if (isDraggingSlider.current) {
-      const percentage = (x / rect.width) * 100;
-      setSliderPosition(Math.max(5, Math.min(95, percentage)));
+      updateSliderFromClientX(e.clientX);
     }
 
     // Normalized pixel coords (512x512)
@@ -71,6 +79,23 @@ export const ViewerComparison: React.FC<ViewerComparisonProps> = ({
       gt: result.groundTruthMaskDataUrl ? true : null,
       status: result.groundTruthMaskDataUrl ? 'TP' : 'Unknown'
     });
+  };
+
+  const handleTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (e.touches.length > 0) {
+      isDraggingSlider.current = true;
+      updateSliderFromClientX(e.touches[0].clientX);
+    }
+  };
+
+  const handleTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (isDraggingSlider.current && e.touches.length > 0) {
+      updateSliderFromClientX(e.touches[0].clientX);
+    }
+  };
+
+  const handleTouchEnd = () => {
+    isDraggingSlider.current = false;
   };
 
   const handleMouseLeave = () => {
@@ -207,8 +232,8 @@ export const ViewerComparison: React.FC<ViewerComparisonProps> = ({
                   <span className="w-2 h-2 rounded-full bg-slate-200" />
                   2. Ground Truth Mask
                 </span>
-                <span className="text-[10px] text-slate-500 font-mono">
-                  {result.groundTruthMaskDataUrl ? '0 vs 255' : 'Unavailable (Test)'}
+                <span className="text-[10px] text-emerald-400 font-mono">
+                  {result.groundTruthMaskDataUrl ? '0 vs 255 (Binarized)' : 'Processing...'}
                 </span>
               </div>
               <div className="relative aspect-square rounded-lg overflow-hidden border border-slate-800 bg-black flex items-center justify-center">
@@ -219,9 +244,9 @@ export const ViewerComparison: React.FC<ViewerComparisonProps> = ({
                     className="w-full h-full object-cover"
                   />
                 ) : (
-                  <div className="p-4 text-center text-slate-500 text-xs">
-                    <Info className="w-6 h-6 mx-auto mb-2 text-slate-600" />
-                    <span>Private Competition Test Labels (Report Section 22)</span>
+                  <div className="p-4 text-center text-slate-500 text-xs flex flex-col items-center gap-2">
+                    <div className="w-5 h-5 border-2 border-slate-400 border-t-transparent rounded-full animate-spin" />
+                    <span>Rendering Ground Truth Mask...</span>
                   </div>
                 )}
               </div>
@@ -254,7 +279,7 @@ export const ViewerComparison: React.FC<ViewerComparisonProps> = ({
                   <span className="w-2 h-2 rounded-full bg-emerald-400" />
                   4. Error Map (TP/FP/FN)
                 </span>
-                <span className="text-[10px] text-slate-500 font-mono">Qualitative</span>
+                <span className="text-[10px] text-slate-400 font-mono">Pixel Overlap</span>
               </div>
               <div className="relative aspect-square rounded-lg overflow-hidden border border-slate-800 bg-black flex items-center justify-center">
                 {result.errorMapDataUrl ? (
@@ -264,9 +289,9 @@ export const ViewerComparison: React.FC<ViewerComparisonProps> = ({
                     className="w-full h-full object-cover"
                   />
                 ) : (
-                  <div className="p-4 text-center text-slate-500 text-xs">
-                    <Info className="w-6 h-6 mx-auto mb-2 text-slate-600" />
-                    <span>Requires Ground Truth mask to compute TP / FP / FN</span>
+                  <div className="p-4 text-center text-slate-500 text-xs flex flex-col items-center gap-2">
+                    <div className="w-5 h-5 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+                    <span>Computing Confusion Map...</span>
                   </div>
                 )}
               </div>
@@ -283,6 +308,9 @@ export const ViewerComparison: React.FC<ViewerComparisonProps> = ({
               onMouseUp={handleMouseUp}
               onMouseMove={handleMouseMove}
               onMouseLeave={handleMouseLeave}
+              onTouchStart={handleTouchStart}
+              onTouchMove={handleTouchMove}
+              onTouchEnd={handleTouchEnd}
               className="relative aspect-square w-full rounded-xl overflow-hidden border border-slate-700 bg-black select-none cursor-ew-resize shadow-2xl"
             >
               {/* Underneath: Original RGB */}
@@ -292,22 +320,17 @@ export const ViewerComparison: React.FC<ViewerComparisonProps> = ({
                 className="absolute inset-0 w-full h-full object-cover pointer-events-none"
               />
 
-              {/* Over top: Prediction or GT with clip-path */}
-              <div
-                className="absolute inset-0 overflow-hidden pointer-events-none"
-                style={{ width: `${sliderPosition}%` }}
-              >
-                <img
-                  src={result.predictionMaskDataUrl}
-                  alt="Prediction Mask"
-                  className="absolute inset-0 w-full h-full object-cover"
-                  style={{ width: containerRef.current?.offsetWidth || '100%', maxWidth: 'none' }}
-                />
-              </div>
+              {/* Over top: Prediction with CSS clip-path */}
+              <img
+                src={result.predictionMaskDataUrl}
+                alt="Prediction Mask"
+                className="absolute inset-0 w-full h-full object-cover pointer-events-none"
+                style={{ clipPath: `inset(0 ${100 - sliderPosition}% 0 0)` }}
+              />
 
               {/* Divider Line */}
               <div
-                className="absolute top-0 bottom-0 w-1 bg-white shadow-[0_0_10px_rgba(0,0,0,0.8)] pointer-events-none flex items-center justify-center"
+                className="absolute top-0 bottom-0 w-1 bg-white shadow-[0_0_10px_rgba(0,0,0,0.8)] pointer-events-none flex items-center justify-center z-10"
                 style={{ left: `${sliderPosition}%` }}
               >
                 <div className="w-7 h-7 -ml-0 rounded-full bg-white text-slate-900 shadow-xl flex items-center justify-center border border-slate-300">
@@ -316,16 +339,16 @@ export const ViewerComparison: React.FC<ViewerComparisonProps> = ({
               </div>
 
               {/* Labels on sides */}
-              <div className="absolute top-3 left-3 px-2 py-1 rounded bg-black/70 backdrop-blur-sm text-[11px] font-semibold text-white pointer-events-none">
+              <div className="absolute top-3 left-3 px-2 py-1 rounded bg-black/70 backdrop-blur-sm text-[11px] font-semibold text-white pointer-events-none z-10">
                 U-Net Prediction Mask
               </div>
-              <div className="absolute top-3 right-3 px-2 py-1 rounded bg-black/70 backdrop-blur-sm text-[11px] font-semibold text-white pointer-events-none">
+              <div className="absolute top-3 right-3 px-2 py-1 rounded bg-black/70 backdrop-blur-sm text-[11px] font-semibold text-white pointer-events-none z-10">
                 Original Aerial RGB
               </div>
             </div>
 
             <p className="text-center text-xs text-slate-400">
-              Drag or move your cursor across the image to swipe between Prediction and Aerial RGB.
+              Drag or swipe across the image to interactively compare model prediction with the aerial photograph.
             </p>
           </div>
         )}
@@ -395,10 +418,10 @@ export const ViewerComparison: React.FC<ViewerComparisonProps> = ({
                 />
               ) : (
                 <div className="w-full h-full flex flex-col items-center justify-center p-6 text-center text-slate-400">
-                  <AlertOctagon className="w-10 h-10 text-amber-500 mb-2" />
-                  <p className="font-semibold text-sm">Ground Truth Mask Withheld</p>
+                  <div className="w-8 h-8 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin mb-2" />
+                  <p className="font-semibold text-sm">Computing Confusion Error Map</p>
                   <p className="text-xs text-slate-500 mt-1 max-w-sm">
-                    In the official Inria Test set (e.g. San Francisco), labels are kept secret by the organizers. Select a Validation preset (Vienna, West Tyrol) or upload custom Ground Truth to inspect TP, FP, and FN errors.
+                    Analyzing model predictions against Ground Truth building footprints across the 256×256 tiled pipeline.
                   </p>
                 </div>
               )}
@@ -470,15 +493,6 @@ export const ViewerComparison: React.FC<ViewerComparisonProps> = ({
               <div className="absolute bottom-3 right-3 px-2 py-1 rounded bg-black/80 backdrop-blur-sm text-[11px] font-mono text-amber-300 border border-amber-500/40">
                 Stride: 256 px • Resolution: 256×256
               </div>
-            </div>
-
-            <div className="bg-slate-950/60 p-3 rounded-xl border border-slate-800 text-xs text-slate-300 space-y-1">
-              <div className="font-semibold text-amber-400 flex items-center gap-1.5">
-                <span>🍕 Rahim's Pizza Slicing Rationale (Section 6)</span>
-              </div>
-              <p className="text-slate-400 text-[11px] leading-relaxed">
-                A raw 1500×1500 aerial image occupies significant GPU memory during backpropagation. Instead of downscaling and losing roof edge details, the image is extracted into clean 256×256 patches. U-Net computes inference on each patch independently and recombines them seamlessly.
-              </p>
             </div>
           </div>
         )}

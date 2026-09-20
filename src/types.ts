@@ -4,9 +4,10 @@ export type RegionName =
   | 'Kitsap County'
   | 'Vienna'
   | 'West Tyrol'
+  | 'San Francisco'
   | 'San Francisco (Test)';
 
-export type SplitType = 'Training' | 'Validation' | 'Test (No Official Labels)';
+export type SplitType = 'Training' | 'Validation' | 'Test' | 'Test (No Official Labels)';
 
 export type AblationModelId = 'exp_a_bce' | 'exp_b_bce_dice' | 'exp_c_bce_dice_boundary';
 

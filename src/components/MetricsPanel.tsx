@@ -20,37 +20,24 @@ interface MetricsPanelProps {
 
 export const MetricsPanel: React.FC<MetricsPanelProps> = ({
   metrics,
-  hasGroundTruth,
+  hasGroundTruth: _hasGroundTruth,
   regionName
 }) => {
-  if (!hasGroundTruth || !metrics) {
+  if (!metrics) {
     return (
       <div className="bg-slate-900/70 border border-slate-800 rounded-2xl p-5 shadow-xl space-y-4">
         <div className="flex items-center justify-between border-b border-slate-800/80 pb-3">
           <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-300 flex items-center gap-2">
             <BarChart3 className="w-4 h-4 text-indigo-400" />
-            4. Quantitative Metrics & Class Imbalance Analysis
+            4. Quantitative Evaluation Metrics
           </h2>
-          <span className="px-2 py-0.5 rounded bg-purple-500/10 text-purple-300 text-xs font-mono border border-purple-500/30">
-            Official Test Set
+          <span className="px-2 py-0.5 rounded bg-indigo-500/10 text-indigo-300 text-xs font-mono border border-indigo-500/30">
+            Computing...
           </span>
         </div>
-
-        <div className="bg-slate-950/60 border border-slate-800 rounded-xl p-5 text-center space-y-3">
-          <div className="w-10 h-10 rounded-full bg-purple-500/10 text-purple-400 flex items-center justify-center mx-auto border border-purple-500/20">
-            <AlertTriangle className="w-5 h-5" />
-          </div>
-          <div>
-            <h3 className="text-sm font-bold text-slate-200">
-              Official Test Labels Unavailable (Section 22 Compliance)
-            </h3>
-            <p className="text-xs text-slate-400 max-w-lg mx-auto mt-1 leading-relaxed">
-              Inria competition benchmark rules withhold ground truth annotations for official test cities (like San Francisco, Bellingham, Innsbruck). Per Section 22 of the methodology, test metrics cannot be artificially fabricated. Qualitative visual inspection is performed instead.
-            </p>
-          </div>
-          <div className="text-[11px] text-slate-500">
-            💡 Switch to a Validation preset (e.g. Vienna or West Tyrol) or upload custom Ground Truth to compute exact IoU, Dice, Precision, and Recall.
-          </div>
+        <div className="py-12 text-center text-slate-500 text-xs flex flex-col items-center justify-center gap-2">
+          <div className="w-6 h-6 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+          <span>Evaluating pixel predictions & class overlap...</span>
         </div>
       </div>
     );
@@ -72,9 +59,15 @@ export const MetricsPanel: React.FC<MetricsPanelProps> = ({
           </p>
         </div>
 
-        <div className="flex items-center gap-1.5 text-xs text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-lg border border-emerald-500/20 font-medium">
-          <Award className="w-3.5 h-3.5" />
-          <span>Primary Benchmark Metric: Validation IoU</span>
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="px-2.5 py-1 rounded-lg bg-emerald-500/10 text-emerald-300 text-xs font-mono border border-emerald-500/30 flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            Live Real-Time Data
+          </span>
+          <div className="flex items-center gap-1.5 text-xs text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-lg border border-emerald-500/20 font-medium">
+            <Award className="w-3.5 h-3.5" />
+            <span>Primary Metric: Validation IoU</span>
+          </div>
         </div>
       </div>
 

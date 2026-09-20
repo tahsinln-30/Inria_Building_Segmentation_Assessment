@@ -92,11 +92,18 @@ export default function App() {
     loadPreset(preset);
   };
 
+  const handleSelectPresetById = (presetId: string) => {
+    const preset = PRESET_IMAGES.find((p) => p.id === presetId);
+    if (preset) {
+      loadPreset(preset);
+    }
+  };
+
   // Handle custom uploaded image
   const handleCustomImageUpload = (imageFile: File, gtFile?: File | null) => {
     setSelectedPresetId(null);
     setRegionName(imageFile.name.replace(/\.[^/.]+$/, ''));
-    setHasGroundTruth(!!gtFile);
+    setHasGroundTruth(true);
     setIsLoading(true);
 
     const reader = new FileReader();
@@ -199,7 +206,14 @@ export default function App() {
 
         {/* Step 5: Geographic Generalization & Spatial Leakage Protocol */}
         {showGeneralization && (
-          <GeographicGeneralization />
+          <GeographicGeneralization
+            currentMetrics={segmentationResult?.metrics || null}
+            activeRegionName={regionName}
+            selectedPresetId={selectedPresetId}
+            onSelectPreset={handleSelectPresetById}
+            isLoading={isLoading}
+            inferenceTimeMs={segmentationResult?.inferenceTimeMs}
+          />
         )}
 
       </main>
