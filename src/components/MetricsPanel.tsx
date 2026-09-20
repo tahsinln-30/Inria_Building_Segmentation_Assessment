@@ -174,7 +174,7 @@ export const MetricsPanel: React.FC<MetricsPanelProps> = ({
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
             <span className="font-semibold text-slate-200">
-              Class Imbalance Distribution (Section 11):
+              Class Imbalance Distribution:
             </span>
           </div>
           <div className="text-slate-400 text-[11px]">
@@ -223,7 +223,7 @@ export const MetricsPanel: React.FC<MetricsPanelProps> = ({
       <div className="bg-slate-950/60 border border-slate-800 rounded-xl p-3.5">
         <h4 className="text-xs font-semibold text-slate-300 mb-2 flex items-center justify-between">
           <span>Pixel-Level Confusion Matrix (Total: {confusion.totalPixels.toLocaleString()} px)</span>
-          <span className="text-[10px] text-slate-500 font-normal">Section 15 & 16 Error Breakdown</span>
+          <span className="text-[10px] text-slate-500 font-normal">Pixel Error Breakdown</span>
         </h4>
 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">

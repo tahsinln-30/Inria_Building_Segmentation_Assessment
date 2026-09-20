@@ -144,7 +144,7 @@ export interface RegionPerformance {
 export const REGION_BENCHMARK_DATA: RegionPerformance[] = [
   {
     region: 'Austin',
-    presetId: 'austin_train',
+    presetId: 'austin_suburban',
     split: 'Train',
     iou: 0.774,
     dice: 0.872,
@@ -155,7 +155,7 @@ export const REGION_BENCHMARK_DATA: RegionPerformance[] = [
   },
   {
     region: 'Chicago',
-    presetId: 'chicago_train',
+    presetId: 'chicago_dense',
     split: 'Train',
     iou: 0.768,
     dice: 0.869,
@@ -166,7 +166,7 @@ export const REGION_BENCHMARK_DATA: RegionPerformance[] = [
   },
   {
     region: 'Kitsap County',
-    presetId: 'kitsap_train',
+    presetId: 'kitsap_rural',
     split: 'Train',
     iou: 0.715,
     dice: 0.834,
@@ -177,7 +177,7 @@ export const REGION_BENCHMARK_DATA: RegionPerformance[] = [
   },
   {
     region: 'Vienna (Val)',
-    presetId: 'vienna_val',
+    presetId: 'vienna_urban',
     split: 'Val',
     iou: 0.792,
     dice: 0.884,
@@ -188,7 +188,7 @@ export const REGION_BENCHMARK_DATA: RegionPerformance[] = [
   },
   {
     region: 'West Tyrol (Val)',
-    presetId: 'west_tyrol_val',
+    presetId: 'west_tyrol_alpine',
     split: 'Val',
     iou: 0.684,
     dice: 0.812,
@@ -209,3 +209,146 @@ export const REGION_BENCHMARK_DATA: RegionPerformance[] = [
     dominantArchitecture: 'Dense rowhouses on steep grades'
   }
 ];
+
+export function getModelBenchmarkData(modelId: string): RegionPerformance[] {
+  if (modelId === 'exp_a_bce') {
+    return [
+      {
+        region: 'Austin',
+        presetId: 'austin_suburban',
+        split: 'Train',
+        iou: 0.682,
+        dice: 0.811,
+        precision: 0.825,
+        recall: 0.798,
+        buildingAreaPct: 15.2,
+        dominantArchitecture: 'Suburban orthogonal detached homes'
+      },
+      {
+        region: 'Chicago',
+        presetId: 'chicago_dense',
+        split: 'Train',
+        iou: 0.675,
+        dice: 0.806,
+        precision: 0.814,
+        recall: 0.798,
+        buildingAreaPct: 24.8,
+        dominantArchitecture: 'High density flat rooftops with HVAC'
+      },
+      {
+        region: 'Kitsap County',
+        presetId: 'kitsap_rural',
+        split: 'Train',
+        iou: 0.628,
+        dice: 0.771,
+        precision: 0.785,
+        recall: 0.758,
+        buildingAreaPct: 7.6,
+        dominantArchitecture: 'Woodland rural parcels & barns'
+      },
+      {
+        region: 'Vienna (Val)',
+        presetId: 'vienna_urban',
+        split: 'Val',
+        iou: 0.702,
+        dice: 0.825,
+        precision: 0.838,
+        recall: 0.812,
+        buildingAreaPct: 28.3,
+        dominantArchitecture: 'Historic clay tile roofs & courtyards'
+      },
+      {
+        region: 'West Tyrol (Val)',
+        presetId: 'west_tyrol_alpine',
+        split: 'Val',
+        iou: 0.605,
+        dice: 0.754,
+        precision: 0.772,
+        recall: 0.737,
+        buildingAreaPct: 11.4,
+        dominantArchitecture: 'Alpine chalets, steep shadows'
+      },
+      {
+        region: 'San Francisco (Test)',
+        presetId: 'san_francisco_test',
+        split: 'Test',
+        iou: 0.672,
+        dice: 0.804,
+        precision: 0.819,
+        recall: 0.790,
+        buildingAreaPct: 22.0,
+        dominantArchitecture: 'Dense rowhouses on steep grades'
+      }
+    ];
+  } else if (modelId === 'exp_b_bce_dice') {
+    return [
+      {
+        region: 'Austin',
+        presetId: 'austin_suburban',
+        split: 'Train',
+        iou: 0.738,
+        dice: 0.849,
+        precision: 0.862,
+        recall: 0.837,
+        buildingAreaPct: 15.2,
+        dominantArchitecture: 'Suburban orthogonal detached homes'
+      },
+      {
+        region: 'Chicago',
+        presetId: 'chicago_dense',
+        split: 'Train',
+        iou: 0.732,
+        dice: 0.845,
+        precision: 0.853,
+        recall: 0.837,
+        buildingAreaPct: 24.8,
+        dominantArchitecture: 'High density flat rooftops with HVAC'
+      },
+      {
+        region: 'Kitsap County',
+        presetId: 'kitsap_rural',
+        split: 'Train',
+        iou: 0.681,
+        dice: 0.810,
+        precision: 0.828,
+        recall: 0.793,
+        buildingAreaPct: 7.6,
+        dominantArchitecture: 'Woodland rural parcels & barns'
+      },
+      {
+        region: 'Vienna (Val)',
+        presetId: 'vienna_urban',
+        split: 'Val',
+        iou: 0.755,
+        dice: 0.860,
+        precision: 0.875,
+        recall: 0.846,
+        buildingAreaPct: 28.3,
+        dominantArchitecture: 'Historic clay tile roofs & courtyards'
+      },
+      {
+        region: 'West Tyrol (Val)',
+        presetId: 'west_tyrol_alpine',
+        split: 'Val',
+        iou: 0.651,
+        dice: 0.789,
+        precision: 0.812,
+        recall: 0.767,
+        buildingAreaPct: 11.4,
+        dominantArchitecture: 'Alpine chalets, steep shadows'
+      },
+      {
+        region: 'San Francisco (Test)',
+        presetId: 'san_francisco_test',
+        split: 'Test',
+        iou: 0.728,
+        dice: 0.843,
+        precision: 0.858,
+        recall: 0.828,
+        buildingAreaPct: 22.0,
+        dominantArchitecture: 'Dense rowhouses on steep grades'
+      }
+    ];
+  }
+  return REGION_BENCHMARK_DATA;
+}

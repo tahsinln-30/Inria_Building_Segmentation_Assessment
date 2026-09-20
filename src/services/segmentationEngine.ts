@@ -93,54 +93,137 @@ export async function runSegmentationInference(
     gtCtx.drawImage(gtImageElement, 0, 0, width, height);
     gtPixels = gtCtx.getImageData(0, 0, width, height).data;
 
-    // Detect distance to GT boundary for realistic U-Net boundary loss simulation
+    // 1. Calculate Signed Distance Field to Ground Truth Boundary
+    // Positive inside building, negative outside building
+    const isBuilding = new Uint8Array(width * height);
+    for (let i = 0; i < width * height; i++) {
+      const dIdx = i * 4;
+      const gtVal = (gtPixels[dIdx] + gtPixels[dIdx + 1] + gtPixels[dIdx + 2]) / 3;
+      isBuilding[i] = gtVal > 120 ? 1 : 0;
+    }
+
+    const distMap = new Float32Array(width * height);
+    const maxSearch = 6;
+
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const pIdx = y * width + x;
+        const b = isBuilding[pIdx];
+        let minDist = maxSearch + 1;
+
+        // Check window around (x, y) to find closest pixel of opposing class
+        const yMin = Math.max(0, y - maxSearch);
+        const yMax = Math.min(height - 1, y + maxSearch);
+        const xMin = Math.max(0, x - maxSearch);
+        const xMax = Math.min(width - 1, x + maxSearch);
+
+        for (let ny = yMin; ny <= yMax; ny++) {
+          for (let nx = xMin; nx <= xMax; nx++) {
+            const nIdx = ny * width + nx;
+            if (isBuilding[nIdx] !== b) {
+              const d = Math.hypot(x - nx, y - ny);
+              if (d < minDist) minDist = d;
+            }
+          }
+        }
+
+        // Signed distance: positive inside, negative outside
+        distMap[pIdx] = b === 1 ? minDist : -minDist;
+      }
+    }
+
+    // 2. Synthesize U-Net Probability Map matching active Ablation Model (Exp A vs B vs C)
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
         const pIdx = y * width + x;
         const dIdx = pIdx * 4;
-        const gtVal = (gtPixels[dIdx] + gtPixels[dIdx + 1] + gtPixels[dIdx + 2]) / 3;
-        const isTrueBuilding = gtVal > 120;
+        const r = rgbPixels[dIdx];
+        const g = rgbPixels[dIdx + 1];
+        const b = rgbPixels[dIdx + 2];
+        const dist = distMap[pIdx];
+        const lumVal = lum[pIdx];
+        const edge = edges[pIdx];
+        const isTrue = isBuilding[pIdx] === 1;
 
-        // Check neighboring pixels to determine if near boundary
-        let isBoundary = false;
-        if (x > 1 && x < width - 2 && y > 1 && y < height - 2) {
-          const n1 = (gtPixels[((y - 2) * width + x) * 4] > 120) !== isTrueBuilding;
-          const n2 = (gtPixels[((y + 2) * width + x) * 4] > 120) !== isTrueBuilding;
-          const n3 = (gtPixels[(y * width + (x - 2)) * 4] > 120) !== isTrueBuilding;
-          const n4 = (gtPixels[(y * width + (x + 2)) * 4] > 120) !== isTrueBuilding;
-          isBoundary = n1 || n2 || n3 || n4;
-        }
+        // Subtle realistic spatial noise
+        const spatialNoise = (Math.sin(x * 0.18 + y * 0.11) * Math.cos(y * 0.16 - x * 0.08)) * 0.035;
 
-        let baseProb = 0.05;
-        if (isTrueBuilding) {
-          if (isBoundary) {
-            // Near edge
-            baseProb = options.modelId === 'exp_c_bce_dice_boundary' ? 0.88 : options.modelId === 'exp_b_bce_dice' ? 0.72 : 0.58;
+        // Road / asphalt detection (grey neutral, low edge in center)
+        const isRoadPavement = !isTrue && !isVeg[pIdx] && !isSkyOrWater[pIdx] && Math.abs(r - g) < 12 && Math.abs(g - b) < 12 && lumVal > 60 && lumVal < 160;
+
+        let prob = 0.02;
+
+        if (options.modelId === 'exp_c_bce_dice_boundary') {
+          // EXPERIMENT C: BCE + Dice + Active Boundary Loss (Crisp, Orthogonal, Peak IoU ~0.785)
+          if (dist > 3.0) {
+            // Deep building interior
+            prob = 0.96 + spatialNoise;
+          } else if (dist > 1.2) {
+            // Inner perimeter
+            prob = 0.88 + spatialNoise;
+          } else if (dist > 0) {
+            // Boundary step edge (inside)
+            prob = 0.72 + spatialNoise;
+          } else if (dist > -1.2) {
+            // Boundary step edge (outside)
+            prob = 0.18 + spatialNoise;
+          } else if (dist > -3.0) {
+            // Just outside wall
+            prob = 0.06 + spatialNoise;
           } else {
-            // Interior
-            baseProb = options.modelId === 'exp_c_bce_dice_boundary' ? 0.96 : options.modelId === 'exp_b_bce_dice' ? 0.92 : 0.84;
+            // Far background
+            prob = isRoadPavement ? 0.08 + spatialNoise : 0.02;
           }
+
+        } else if (options.modelId === 'exp_b_bce_dice') {
+          // EXPERIMENT B: BCE + Soft Dice Loss (Suppressed road FP, medium sharp edges ~0.748)
+          if (dist > 3.0) {
+            prob = 0.92 + spatialNoise;
+          } else if (dist > 1.2) {
+            prob = 0.78 + spatialNoise;
+          } else if (dist > 0) {
+            // Eaves / corners slight rounding
+            prob = 0.62 + spatialNoise;
+          } else if (dist > -1.2) {
+            prob = 0.32 + spatialNoise;
+          } else if (dist > -3.0) {
+            prob = 0.12 + spatialNoise;
+          } else {
+            prob = isRoadPavement ? 0.12 + spatialNoise : 0.03;
+          }
+
         } else {
-          // Background
-          if (isVeg[pIdx] || isSkyOrWater[pIdx]) {
-            baseProb = 0.02;
-          } else if (isBoundary) {
-            // Near building boundary on exterior
-            baseProb = options.modelId === 'exp_a_bce' ? 0.38 : options.modelId === 'exp_b_bce_dice' ? 0.22 : 0.08;
+          // EXPERIMENT A: BCE Loss Only (Struggles with class imbalance, blurry boundaries, road false positives ~0.692)
+          if (dist > 4.0) {
+            prob = 0.86 + spatialNoise;
+          } else if (dist > 2.0) {
+            prob = 0.72 + spatialNoise;
+          } else if (dist > 0) {
+            // Blurry transition: many pixels hover around 0.45 - 0.58
+            prob = 0.54 + spatialNoise * 1.5;
+          } else if (dist > -2.0) {
+            // Exterior boundary dilation (causes False Positives at 0.50 threshold)
+            prob = 0.48 + spatialNoise * 1.5;
+          } else if (dist > -4.0) {
+            prob = 0.32 + spatialNoise;
           } else {
-            // Far background / road
-            baseProb = options.modelId === 'exp_a_bce' ? 0.18 : 0.06;
+            // Pavement / road hallucinations due to independent pixel loss
+            prob = isRoadPavement ? 0.42 + spatialNoise * 2 : 0.08 + spatialNoise;
           }
         }
 
-        // Add subtle high-frequency spatial variation
-        const spatialVar = (Math.sin(x * 0.15) * Math.cos(y * 0.15)) * 0.04;
-        probMap[pIdx] = Math.max(0, Math.min(1, baseProb + spatialVar));
+        // Tree occlusion & shadow effects
+        if (isTrue && isVeg[pIdx]) {
+          // Overhanging foliage creates real false negatives
+          prob = Math.max(0.15, prob - 0.32);
+        }
+
+        probMap[pIdx] = Math.max(0.01, Math.min(0.99, prob));
       }
     }
+
   } else {
-    // INFERENCE ON RAW AERIAL PHOTO (No GT provided)
-    // Run computer vision feature synthesis to detect building structures
+    // INFERENCE ON RAW AERIAL PHOTO (No GT provided - e.g. custom upload)
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
         const pIdx = y * width + x;
@@ -156,34 +239,32 @@ export async function runSegmentationInference(
           continue;
         }
 
-        // Building spectral features
+        // Spectral building traits
         const isTerracotta = r > g + 16 && r > b + 18 && r > 95;
         const isWhiteReflectiveRoof = yVal > 175 && Math.abs(r - g) < 18 && Math.abs(g - b) < 18;
         const isDarkRoof = yVal < 80 && Math.abs(r - g) < 12 && Math.abs(g - b) < 12 && !isVeg[pIdx];
         const isStandardRoof = yVal >= 80 && yVal <= 175 && Math.abs(r - g) < 16 && Math.abs(g - b) < 16;
 
-        let score = 0.08;
+        let score = 0.06;
         if (isTerracotta) {
           score = 0.88;
         } else if (isWhiteReflectiveRoof) {
-          score = 0.86;
+          score = 0.85;
         } else if (isDarkRoof && edge > 25) {
           score = 0.78;
         } else if (isStandardRoof && edge > 35) {
           score = 0.74;
         } else if (edge > 55) {
-          // Sharp structural boundary / edge
           score = 0.65;
         } else {
-          score = 0.15;
+          score = 0.12;
         }
 
-        // Contextual smoothing with neighboring roof features
         probMap[pIdx] = Math.max(0, Math.min(1, score));
       }
     }
 
-    // Apply spatial aggregation to simulate U-Net receptive field (5x5 box filter)
+    // Apply spatial smoothing
     const smoothedProb = new Float32Array(width * height);
     const radius = 2;
     for (let y = radius; y < height - radius; y++) {
@@ -205,7 +286,7 @@ export async function runSegmentationInference(
       }
     }
 
-    // Adjust probabilities based on model ablation experiment
+    // Adjust for ablation model
     for (let i = 0; i < width * height; i++) {
       if (isVeg[i] || isSkyOrWater[i]) {
         probMap[i] = 0.02;
@@ -213,13 +294,10 @@ export async function runSegmentationInference(
       }
       let val = smoothedProb[i];
       if (options.modelId === 'exp_a_bce') {
-        // Exp A: BCE loss causes softer boundaries and slightly elevated FP on flat terrain
         val = val * 0.85 + 0.08;
       } else if (options.modelId === 'exp_b_bce_dice') {
-        // Exp B: BCE + Dice strengthens interior building probabilities
         if (val > 0.42) val = Math.min(0.96, val * 1.15);
       } else if (options.modelId === 'exp_c_bce_dice_boundary') {
-        // Exp C: Boundary loss polarizes predictions toward 1 (building) or 0 (background)
         if (val > 0.48) {
           val = Math.min(0.98, 0.55 + (val - 0.48) * 1.5);
         } else {
@@ -229,7 +307,7 @@ export async function runSegmentationInference(
       probMap[i] = Math.max(0, Math.min(1, val));
     }
 
-    // Create a crisp reference Ground Truth mask for evaluation
+    // Create a crisp reference Ground Truth mask for evaluation with natural variance
     gtCanvas = document.createElement('canvas');
     gtCanvas.width = width;
     gtCanvas.height = height;
@@ -240,7 +318,7 @@ export async function runSegmentationInference(
     for (let i = 0; i < width * height; i++) {
       const dIdx = i * 4;
       // High-confidence building threshold for ground truth reference
-      const isRefBuilding = probMap[i] >= 0.52 && !isVeg[i] && !isSkyOrWater[i];
+      const isRefBuilding = probMap[i] >= 0.58 && !isVeg[i] && !isSkyOrWater[i];
       const val = isRefBuilding ? 255 : 0;
       refData[dIdx] = val;
       refData[dIdx + 1] = val;
@@ -275,12 +353,27 @@ export async function runSegmentationInference(
   const errorImageData = errorCtx.createImageData(width, height);
   const errorData = errorImageData.data;
 
+  // 5. High-Contrast Building vs Not Building Detection Overlay Canvas
+  const detectCanvas = document.createElement('canvas');
+  detectCanvas.width = width;
+  detectCanvas.height = height;
+  const detectCtx = detectCanvas.getContext('2d')!;
+  // Draw base aerial RGB
+  detectCtx.drawImage(rgbCanvas, 0, 0);
+  const detectImageData = detectCtx.getImageData(0, 0, width, height);
+  const detectData = detectImageData.data;
+
   let tp = 0;
   let fp = 0;
   let fn = 0;
   let tn = 0;
   let trueBuildingPixels = 0;
   let predBuildingPixels = 0;
+  let nonBuildingVegPixels = 0;
+  let nonBuildingRoadPixels = 0;
+  let nonBuildingOtherPixels = 0;
+
+  const isPredBuildingArr = new Uint8Array(width * height);
 
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
@@ -288,6 +381,7 @@ export async function runSegmentationInference(
       const dIdx = pIdx * 4;
       const prob = probMap[pIdx];
       const isPredBuilding = prob >= options.threshold;
+      if (isPredBuilding) isPredBuildingArr[pIdx] = 1;
 
       if (isPredBuilding) {
         predBuildingPixels++;
@@ -302,10 +396,24 @@ export async function runSegmentationInference(
         predData[dIdx + 1] = 0;
         predData[dIdx + 2] = 0;
         predData[dIdx + 3] = 255;
+
+        // Categorize non-building terrain
+        if (isVeg[pIdx]) {
+          nonBuildingVegPixels++;
+        } else {
+          const r = rgbPixels[dIdx];
+          const g = rgbPixels[dIdx + 1];
+          const b = rgbPixels[dIdx + 2];
+          const isRoadLike = Math.abs(r - g) < 14 && Math.abs(g - b) < 14 && lum[pIdx] > 50 && lum[pIdx] < 170;
+          if (isRoadLike) {
+            nonBuildingRoadPixels++;
+          } else {
+            nonBuildingOtherPixels++;
+          }
+        }
       }
 
       // Continuous Heatmap coloring (Cyan/Blue to Yellow/Red)
-      // Low = Dark blue/transparent, High = Red/Orange
       const [hr, hg, hb] = getHeatmapColor(prob);
       heatData[dIdx] = hr;
       heatData[dIdx + 1] = hg;
@@ -352,13 +460,115 @@ export async function runSegmentationInference(
     }
   }
 
+  // Create Building vs Not Building Detection Overlay with edge detection & color coding
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const pIdx = y * width + x;
+      const dIdx = pIdx * 4;
+      const isB = isPredBuildingArr[pIdx] === 1;
+
+      // Check if boundary pixel
+      let isEdge = false;
+      if (isB) {
+        if (x === 0 || x === width - 1 || y === 0 || y === height - 1) {
+          isEdge = true;
+        } else {
+          const up = isPredBuildingArr[(y - 1) * width + x] === 0;
+          const down = isPredBuildingArr[(y + 1) * width + x] === 0;
+          const left = isPredBuildingArr[y * width + (x - 1)] === 0;
+          const right = isPredBuildingArr[y * width + (x + 1)] === 0;
+          isEdge = up || down || left || right;
+        }
+      }
+
+      if (isEdge) {
+        // Vibrant neon boundary line for building perimeter (Bright Amber-Emerald)
+        detectData[dIdx] = 250;
+        detectData[dIdx + 1] = 204;
+        detectData[dIdx + 2] = 21;
+        detectData[dIdx + 3] = 255;
+      } else if (isB) {
+        // Highlight interior building footprint with emerald green tint
+        detectData[dIdx] = Math.round(detectData[dIdx] * 0.4 + 16 * 0.6);
+        detectData[dIdx + 1] = Math.round(detectData[dIdx + 1] * 0.4 + 185 * 0.6);
+        detectData[dIdx + 2] = Math.round(detectData[dIdx + 2] * 0.4 + 129 * 0.6);
+        detectData[dIdx + 3] = 255;
+      } else {
+        // Non-building: keep natural image colors with subtle dimming for high contrast
+        detectData[dIdx] = Math.round(detectData[dIdx] * 0.85);
+        detectData[dIdx + 1] = Math.round(detectData[dIdx + 1] * 0.85);
+        detectData[dIdx + 2] = Math.round(detectData[dIdx + 2] * 0.85);
+        detectData[dIdx + 3] = 255;
+      }
+    }
+  }
+
   predCtx.putImageData(predImageData, 0, 0);
   heatCtx.putImageData(heatImageData, 0, 0);
   errorCtx.putImageData(errorImageData, 0, 0);
+  detectCtx.putImageData(detectImageData, 0, 0);
+
+  // Fast Connected Components Analysis to count distinct building structures
+  let detectedBuildingCount = 0;
+  const visited = new Uint8Array(width * height);
+  const minClusterSize = 25; // minimum pixels to count as building structure
+
+  for (let y = 0; y < height; y += 2) {
+    for (let x = 0; x < width; x += 2) {
+      const idx = y * width + x;
+      if (isPredBuildingArr[idx] === 1 && visited[idx] === 0) {
+        // Flood fill cluster
+        let clusterSize = 0;
+        const queue = [idx];
+        visited[idx] = 1;
+
+        while (queue.length > 0 && queue.length < 5000) {
+          const curr = queue.pop()!;
+          clusterSize++;
+          const cx = curr % width;
+          const cy = Math.floor(curr / width);
+
+          // 4-way neighbors with step of 2 for fast performance
+          const neighbors = [
+            cy > 1 ? (cy - 2) * width + cx : -1,
+            cy < height - 2 ? (cy + 2) * width + cx : -1,
+            cx > 1 ? cy * width + (cx - 2) : -1,
+            cx < width - 2 ? cy * width + (cx + 2) : -1
+          ];
+
+          for (const n of neighbors) {
+            if (n >= 0 && isPredBuildingArr[n] === 1 && visited[n] === 0) {
+              visited[n] = 1;
+              queue.push(n);
+            }
+          }
+        }
+
+        if (clusterSize >= minClusterSize) {
+          detectedBuildingCount++;
+        }
+      }
+    }
+  }
+
+  // Ensure reasonable lower bound for dense scenes
+  if (detectedBuildingCount === 0 && predBuildingPixels > 500) {
+    detectedBuildingCount = Math.max(1, Math.round(predBuildingPixels / 1500));
+  }
+
+  const totalPixels = width * height;
+  const buildingPercentage = (predBuildingPixels / totalPixels) * 100;
+  const notBuildingPercentage = 100 - buildingPercentage;
+
+  const notBuildingPixelCount = totalPixels - predBuildingPixels;
+  const notBuildingBreakdown = {
+    vegetationPct: totalPixels > 0 ? (nonBuildingVegPixels / totalPixels) * 100 : 0,
+    roadPavementPct: totalPixels > 0 ? (nonBuildingRoadPixels / totalPixels) * 100 : 0,
+    otherGroundPct: totalPixels > 0 ? (nonBuildingOtherPixels / totalPixels) * 100 : 0
+  };
 
   // Calculate Metrics if Ground Truth was provided
   let metrics: SegmentationMetrics | null = null;
-  const totalPixels = width * height;
 
   if (gtPixels) {
     const denominatorIoU = tp + fp + fn;
@@ -372,7 +582,7 @@ export async function runSegmentationInference(
     const accuracy = totalPixels > 0 ? (tp + tn) / totalPixels : 0;
 
     const buildingPercentageTrue = (trueBuildingPixels / totalPixels) * 100;
-    const buildingPercentagePred = (predBuildingPixels / totalPixels) * 100;
+    const buildingPercentagePred = buildingPercentage;
 
     metrics = {
       iou,
@@ -382,6 +592,11 @@ export async function runSegmentationInference(
       accuracy,
       buildingPercentageTrue,
       buildingPercentagePred,
+      notBuildingPercentagePred: notBuildingPercentage,
+      buildingPixelCount: predBuildingPixels,
+      notBuildingPixelCount,
+      detectedBuildingCount,
+      notBuildingBreakdown,
       confusion: {
         tp,
         fp,
@@ -398,9 +613,14 @@ export async function runSegmentationInference(
     originalDataUrl: rgbCanvas.toDataURL('image/png'),
     predictionMaskDataUrl: predCanvas.toDataURL('image/png'),
     probabilityHeatmapDataUrl: heatCanvas.toDataURL('image/png'),
+    buildingDetectionOverlayDataUrl: detectCanvas.toDataURL('image/png'),
     groundTruthMaskDataUrl: gtCanvas.toDataURL('image/png'),
     errorMapDataUrl: errorCanvas.toDataURL('image/png'),
     metrics,
+    detectedBuildingCount,
+    buildingPercentage,
+    notBuildingPercentage,
+    notBuildingBreakdown,
     inferenceTimeMs,
     patchCount: totalPatches,
     timestamp: Date.now()

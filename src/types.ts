@@ -47,6 +47,12 @@ export interface ConfusionMatrix {
   totalPixels: number;
 }
 
+export interface NotBuildingBreakdown {
+  vegetationPct: number;
+  roadPavementPct: number;
+  otherGroundPct: number;
+}
+
 export interface SegmentationMetrics {
   iou: number; // Intersection over Union (Jaccard)
   dice: number; // Dice / F1 Score
@@ -55,6 +61,11 @@ export interface SegmentationMetrics {
   accuracy: number; // (TP + TN) / Total
   buildingPercentageTrue: number; // True class distribution
   buildingPercentagePred: number; // Predicted class distribution
+  notBuildingPercentagePred: number; // Non-building predicted class distribution
+  buildingPixelCount: number;
+  notBuildingPixelCount: number;
+  detectedBuildingCount: number;
+  notBuildingBreakdown: NotBuildingBreakdown;
   confusion: ConfusionMatrix;
 }
 
@@ -62,15 +73,21 @@ export interface SegmentationResult {
   originalDataUrl: string;
   predictionMaskDataUrl: string;
   probabilityHeatmapDataUrl: string;
+  buildingDetectionOverlayDataUrl: string;
   groundTruthMaskDataUrl: string | null;
   errorMapDataUrl: string | null;
   metrics: SegmentationMetrics | null;
+  detectedBuildingCount: number;
+  buildingPercentage: number;
+  notBuildingPercentage: number;
+  notBuildingBreakdown: NotBuildingBreakdown;
   inferenceTimeMs: number;
   patchCount: number;
   timestamp: number;
 }
 
 export type ViewMode = 
+  | 'building_vs_not_building'
   | 'side_by_side'
   | 'split_slider'
   | 'overlay'

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Header } from './components/Header';
 import { ImageUploader } from './components/ImageUploader';
+import { BuildingDetectionSummary } from './components/BuildingDetectionSummary';
 import { AblationControls } from './components/AblationControls';
 import { ViewerComparison } from './components/ViewerComparison';
 import { MetricsPanel } from './components/MetricsPanel';
@@ -8,7 +9,7 @@ import { GeographicGeneralization } from './components/GeographicGeneralization'
 import { PRESET_IMAGES } from './data/sampleImages';
 import { generateAerialPreset } from './services/imageGenerator';
 import { runSegmentationInference } from './services/segmentationEngine';
-import { AblationModelId, PresetImage, SegmentationResult } from './types';
+import { AblationModelId, PresetImage, SegmentationResult, ViewMode } from './types';
 
 export default function App() {
   const [selectedPresetId, setSelectedPresetId] = useState<string | null>('vienna_urban');
@@ -20,6 +21,7 @@ export default function App() {
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [regionName, setRegionName] = useState<string>('Vienna');
   const [hasGroundTruth, setHasGroundTruth] = useState<boolean>(true);
+  const [viewerMode, setViewerMode] = useState<ViewMode>('building_vs_not_building');
 
   // Generalization panel toggle
   const [showGeneralization, setShowGeneralization] = useState<boolean>(true);
@@ -37,12 +39,18 @@ export default function App() {
   ) => {
     setIsLoading(true);
     try {
+      const startTime = performance.now();
       const res = await runSegmentationInference(rgbImg, gtImg, {
         threshold: thresh,
         modelId,
         patchSize: 256,
         morphologicalClean
       });
+      // Ensure smooth loader feedback (minimum 420ms) so user perceives the execution
+      const elapsed = performance.now() - startTime;
+      if (elapsed < 420) {
+        await new Promise((resolve) => setTimeout(resolve, 420 - elapsed));
+      }
       setSegmentationResult(res);
     } catch (err) {
       console.error('Segmentation error:', err);
@@ -104,6 +112,7 @@ export default function App() {
     setSelectedPresetId(null);
     setRegionName(imageFile.name.replace(/\.[^/.]+$/, ''));
     setHasGroundTruth(true);
+    setViewerMode('building_vs_not_building');
     setIsLoading(true);
 
     const reader = new FileReader();
@@ -177,6 +186,14 @@ export default function App() {
           isLoading={isLoading}
         />
 
+        {/* Real-time Building vs Not Building Detection Summary */}
+        <BuildingDetectionSummary
+          result={segmentationResult}
+          regionName={regionName}
+          isCustomUpload={selectedPresetId === null}
+          onFocusDetectionView={() => setViewerMode('building_vs_not_building')}
+        />
+
         {/* Step 2: Ablation Experiments & Controls */}
         <AblationControls
           selectedModelId={selectedModelId}
@@ -188,6 +205,7 @@ export default function App() {
           onToggleMorphological={() => setMorphologicalClean(!morphologicalClean)}
           onRunInference={handleRunInference}
           isLoading={isLoading}
+          result={segmentationResult}
         />
 
         {/* Step 3: Qualitative Visualizer & Error Map */}
@@ -195,6 +213,8 @@ export default function App() {
           result={segmentationResult}
           patchSize={patchSize}
           isLoading={isLoading}
+          activeViewMode={viewerMode}
+          onViewModeChange={setViewerMode}
         />
 
         {/* Step 4: Quantitative Evaluation Metrics & Class Imbalance */}
@@ -210,6 +230,8 @@ export default function App() {
             currentMetrics={segmentationResult?.metrics || null}
             activeRegionName={regionName}
             selectedPresetId={selectedPresetId}
+            selectedModelId={selectedModelId}
+            threshold={threshold}
             onSelectPreset={handleSelectPresetById}
             isLoading={isLoading}
             inferenceTimeMs={segmentationResult?.inferenceTimeMs}
